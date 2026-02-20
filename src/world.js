@@ -122,8 +122,8 @@ export class World {
     initPacmans() {
         // "Pacman" shape: Cylinder with a wedge missing
         // Radius 17.5 (matches new tube size 18), Height 2
-        // ThetaLength 5.0 (Larger gap for easier passage)
-        const geometry = new THREE.CylinderGeometry(17.5, 17.5, 2, 32, 1, false, 0, 5.0);
+        // ThetaLength 4.5 (Larger gap for easier passage)
+        const geometry = new THREE.CylinderGeometry(17.5, 17.5, 2, 32, 1, false, 0, 4.5);
         // Rotate geometry so it faces Z axis (tube length)
         geometry.rotateX(Math.PI / 2);
 
@@ -303,56 +303,32 @@ export class World {
         }
 
         // 4. Pacmans (The Gates)
-        // Solid arc: 0 to 5.0 (Visual)
-        // Gap: 5.0 to 6.28
+        // Solid arc: 0 to 4.5 (Visual) - Gap ~90 degrees
         for (let i = 0; i < this.pacCount; i++) {
             const ob = this.pacData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
-            // Increased threshold slightly to ensure we don't skip it at high speeds
             if (dt < 0.02) { 
                 this.pacs.getMatrixAt(i, _matrix);
                 _invMatrix.copy(_matrix).invert();
                 _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
 
-                // Check if we are inside the "slab" of the pacman (Z-thickness)
-                // Height is 2.0 (local Y in cylinder geo terms, but rotated X by 90)
-                // Cylinder default: Y is up. We rotated X 90. So local Z is the thickness.
-                // Wait: Geometry is Cylinder(radius, radius, 2, ...).
-                // Initial rotation: rotateX(PI/2).
-                // So the "Thickness" (height=2) is now along the World Z (or Local Z).
-                
-                // Let's check local bounds.
-                // Cylinder local coordinates: X, Y are the circle. Z is thickness (after rotation).
-                // Actually after rotateX(90), the original Y axis becomes Z axis.
-                // So in local space: X, Z are the circle. Y is thickness? No.
-                // Original: Y is axis. X,Z are circle.
-                // Rotated X 90: Old Y -> New Z. Old Z -> New -Y.
-                // So New Z is the axis (thickness). New X, New Y are the circle.
-                
-                // Check thickness (Z axis)
-                if (Math.abs(_playerLocal.z) < 0.8) { // Thickness 2.0, half 1.0. 0.8 safety
-                    // Check radius (X, Y plane)
+                // Local Z is thickness (due to geometry rotation)
+                if (Math.abs(_playerLocal.z) < 0.8) { 
                     const distSq = _playerLocal.x * _playerLocal.x + _playerLocal.y * _playerLocal.y;
-                    if (distSq < 20 * 20) { // If within outer radius (approx)
-                         // Check angle
+                    // Check radius (Inner 0, Outer ~17.5)
+                    // We give a bit of leeway on outer edge
+                    if (distSq < 17.0 * 17.0) { 
                         let angle = Math.atan2(_playerLocal.y, _playerLocal.x); 
-                        // Note: CylinderGeometry starts theta at +Z axis? 
-                        // Standard atan2 is from +X axis.
-                        // ThreeJS Cylinder theta starts at +X axis in the XZ plane (unrotated).
-                        // After rotation, it should correspond to XY plane angle.
-                        
                         if (angle < 0) angle += Math.PI * 2;
 
-                        // The geometry is generated with thetaLength 5.0
-                        // Visual solid: 0 to 5.0 radians.
-                        // Gap: 5.0 to 2PI.
-                        // We assume the mesh local rotation handles the spinning.
-                        // So we just check the static local angle.
+                        // Visual Geometry: Starts at 0, wraps CW (due to coordinate mapping) to -4.5
+                        // In atan2 (CCW) space:
+                        // Gap is approx [0, 1.8]
+                        // Solid is [1.8, 6.28]
                         
-                        // Hit if inside the solid arc (0 to 4.9)
-                        if (angle < 4.9) {
+                        if (angle > 1.8) {
                             return true;
                         }
                     }

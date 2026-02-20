@@ -264,8 +264,9 @@ function animate() {
 
     // Add dynamic offset to the camera itself (child of rig) to create parallax/weight
     // When moving LEFT, camera moves slightly RIGHT to emphasize motion
-    const camSwayX = -playerPosLocal.x * 0.3;
-    const camSwayY = -playerPosLocal.y * 0.3 + 1.5; // +1.5 keeps height
+    // Reduced sway to prevent clipping
+    const camSwayX = -playerPosLocal.x * 0.2;
+    const camSwayY = -playerPosLocal.y * 0.2 + 1.5; // +1.5 keeps height
     
     camera.position.x += (camSwayX - camera.position.x) * 0.1;
     camera.position.y += (camSwayY - camera.position.y) * 0.1;
