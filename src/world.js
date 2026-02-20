@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { generatePath, randomRange } from './utils.js';
 import { tunnelVertexShader, tunnelFragmentShader } from './shaders.js';
 
+const _matrix = new THREE.Matrix4();
+const _invMatrix = new THREE.Matrix4();
+const _playerLocal = new THREE.Vector3();
+
 export class World {
     constructor(scene, texture, obstacleTexture) {
         this.scene = scene;
@@ -24,7 +28,7 @@ export class World {
         this.uniforms = {
             time: { value: 0 },
             map: { value: this.texture },
-            distortion: { value: 2.0 },
+            distortion: { value: 1.2 }, // Reduced to prevent wall clipping
             speedEffect: { value: 1.0 }
         };
 
@@ -231,51 +235,69 @@ export class World {
     }
 
     checkCollision(playerPos, playerT, playerLocalPos) {
-        // Simple distance check against nearby obstacles
-        // Optimization: only check obstacles where |obstacle.t - playerT| is small
-        // Handling wrap-around logic for t (0 and 1 are same)
-        
-        const checkThreshold = 0.015; // Tighter longitudinal check
-        const crashDist = 2.5;
+        // Precise OBB collision detection
+        const checkThreshold = 0.02; // Roughly check nearby objects
+        const playerRadius = 0.4; // Matches visual size
 
-        // Check boxes
+        // Check boxes (AABB in local space)
+        // Box is 2x2x2 -> Local bounds [-1,1]
+        const boxBounds = 1.0 + playerRadius;
         for (let i = 0; i < this.obstacleCount; i++) {
             const ob = this.obstacleData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt; 
 
             if (dt < checkThreshold) {
-                const dummy = new THREE.Object3D();
-                this.obstacles.getMatrixAt(i, dummy.matrix);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                if (dummy.position.distanceTo(playerPos) < crashDist) return true;
+                this.obstacles.getMatrixAt(i, _matrix);
+                _invMatrix.copy(_matrix).invert();
+                _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
+
+                if (Math.abs(_playerLocal.x) < boxBounds && 
+                    Math.abs(_playerLocal.y) < boxBounds && 
+                    Math.abs(_playerLocal.z) < boxBounds) {
+                    return true;
+                }
             }
         }
 
-        // Check fans
+        // Check fans (AABB in local space)
+        // Fan is 26x1.5x1.5 -> Local bounds x[-13,13], y[-0.75,0.75], z[-0.75,0.75]
+        const fanHalfLen = 13.0 + playerRadius;
+        const fanHalfThick = 0.75 + playerRadius;
+        
         for (let i = 0; i < this.fanCount; i++) {
             const ob = this.fanData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
             if (dt < checkThreshold) {
-                const point = this.path.getPointAt(ob.t);
-                // Center hub collision
-                if (point.distanceTo(playerPos) < 4.0) return true;
+                this.fans.getMatrixAt(i, _matrix);
+                _invMatrix.copy(_matrix).invert();
+                _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
+
+                if (Math.abs(_playerLocal.x) < fanHalfLen && 
+                    Math.abs(_playerLocal.y) < fanHalfThick && 
+                    Math.abs(_playerLocal.z) < fanHalfThick) {
+                    return true;
+                }
             }
         }
 
-        // Check Tetras
+        // Check Tetras (Sphere check is sufficient and smoother)
+        // Radius ~ 3.0?
         for (let i = 0; i < this.tetraCount; i++) {
             const ob = this.tetraData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
             if (dt < checkThreshold) {
-                const dummy = new THREE.Object3D();
-                this.tetras.getMatrixAt(i, dummy.matrix);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                if (dummy.position.distanceTo(playerPos) < 3.0) return true;
+                // Get world position of tetra
+                this.tetras.getMatrixAt(i, _matrix);
+                const pos = new THREE.Vector3().setFromMatrixPosition(_matrix);
+                
+                // Tetra radius is roughly 2.0 (geometry radius) + player radius
+                // 2.5 is a fair hit radius
+                if (pos.distanceTo(playerPos) < 2.5) return true;
             }
         }
 
@@ -285,30 +307,23 @@ export class World {
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
-            if (dt < 0.01) { // Very thin collision plane
-                // We need to check if player is inside the safe wedge
-                // Player's local angle:
-                // atan2(y, x) gives angle in [-PI, PI]
+            if (dt < 0.015) { // Slightly thicker check
                 let playerAngle = Math.atan2(playerLocalPos.y, playerLocalPos.x); 
-                if (playerAngle < 0) playerAngle += Math.PI * 2; // Normalize 0 - 2PI
+                if (playerAngle < 0) playerAngle += Math.PI * 2;
 
-                // Obstacle rotation at this time
-                // Matches the updatePacMatrix logic:
                 const time = this.uniforms.time.value;
                 let pacRotation = (time * ob.speed + i) % (Math.PI * 2);
                 if (pacRotation < 0) pacRotation += Math.PI * 2;
 
-                // The solid part is [pacRotation, pacRotation + 5.2]
-                // The gap is [pacRotation + 5.2, pacRotation + 2PI] (wrapped)
-                // We check if playerAngle hits the solid part.
-                
-                // Normalize all to handle wrap around
-                // Easier: Subtract pacRotation from playerAngle. Result should be in [5.2, 2PI]
+                // Gap is roughly 1.08 radians (~60 degrees)
+                // Solid part is ~5.2 radians
                 let relativeAngle = playerAngle - pacRotation;
                 while (relativeAngle < 0) relativeAngle += Math.PI * 2;
                 while (relativeAngle >= Math.PI * 2) relativeAngle -= Math.PI * 2;
 
-                // Solid part is 0 to 5.2
+                // Give a little grace period at the edges of the gap?
+                // Solid part is 0 to 5.2. Gap is 5.2 to 6.28.
+                // If we are in solid part, crash.
                 if (relativeAngle < 5.2) {
                     return true;
                 }

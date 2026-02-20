@@ -72,13 +72,31 @@ Promise.all([
     document.getElementById('start-btn').innerText = "SYSTEM ERROR";
 });
 
-// Player Ship (Invisible or simple mesh, camera is attached to it)
+// Player Ship
 const cameraRig = new THREE.Object3D();
 scene.add(cameraRig);
+
 const playerShip = new THREE.Object3D();
 cameraRig.add(playerShip);
+
+// Visual Hitbox (The Player)
+const shipGeo = new THREE.SphereGeometry(0.4, 16, 16); // Small hit circle
+const shipMat = new THREE.MeshBasicMaterial({ 
+    color: 0x00ffff,
+    wireframe: true 
+});
+const shipMesh = new THREE.Mesh(shipGeo, shipMat);
+// Add a core glow
+const coreGeo = new THREE.SphereGeometry(0.2, 16, 16);
+const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+shipMesh.add(new THREE.Mesh(coreGeo, coreMat));
+playerShip.add(shipMesh);
+
+// Camera positioned behind the ship (Chase view to see hitbox)
+camera.position.set(0, 0.5, 2.5); // Slightly up and behind
 playerShip.add(camera);
-playerShip.add(pointLight); // Light moves with player
+
+playerShip.add(pointLight);
 
 // Controls
 const input = { x: 0, y: 0 };
@@ -215,31 +233,35 @@ function animate() {
     cameraRig.quaternion.setFromRotationMatrix(cameraRig.matrix);
 
     // Player Local Movement (Mouse Follow)
-    // Map input (-1 to 1) to tube radius (target ~12.0)
-    const targetX = input.x * 12.0;
-    const targetY = input.y * 12.0;
+    // Map input (-1 to 1) to safe tube radius
+    // We restrict target to a smaller radius to ensure the player attempts to stay safe
+    const safeRadius = 9.5;
+    const targetX = input.x * safeRadius;
+    const targetY = input.y * safeRadius;
     
-    // Smooth lerp to target - Higher value for snappier controls
-    playerPosLocal.x += (targetX - playerPosLocal.x) * 20 * dt;
-    playerPosLocal.y += (targetY - playerPosLocal.y) * 20 * dt;
+    // Smooth lerp to target - Faster for "fine tuned" feel
+    // Using a very high lerp value makes it feel almost 1:1 but with slight weight
+    const lerpFactor = 15.0; 
+    playerPosLocal.x += (targetX - playerPosLocal.x) * lerpFactor * dt;
+    playerPosLocal.y += (targetY - playerPosLocal.y) * lerpFactor * dt;
 
     // Wall Collision
     const dist = playerPosLocal.length();
-    const wallLimit = 13.0; 
+    const wallLimit = 10.0; // Reduced to prevent camera clipping through undulating walls
 
     if (dist > wallLimit) {
         // Wall Hit Damage
         if (state.shake <= 0) {
             state.shake = 0.5;
-            state.speed *= 0.8; // Lose speed from scraping
-            state.health -= 2; // Minor damage for wall scraping
+            state.speed *= 0.8;
+            state.health -= 2;
             state.lastHitTime = state.time;
             audio.play('crash', false, 0.3);
             glitchEl.style.opacity = 0.5;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
         }
-        // Force back slightly to keep inside bounds visually
-        playerPosLocal.setLength(wallLimit - 0.1);
+        // Force back
+        playerPosLocal.setLength(wallLimit - 0.05);
     }
 
     // Apply local position to ship
