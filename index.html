@@ -98,6 +98,27 @@
             color: #f00;
             font-size: 50px;
             text-shadow: 0 0 20px #f00;
+            z-index: 200;
+        }
+        #health-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 400px;
+            height: 20px;
+            background: rgba(0,0,0,0.5);
+            border: 2px solid #0ff;
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 50;
+        }
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #f00, #ff0, #0f0);
+            transition: width 0.2s;
         }
     </style>
     <script type="importmap">
@@ -113,18 +134,26 @@
 <body>
     <div id="start-screen">
         <h1>Hyper Sensory<br>Overload</h1>
+        <div style="border: 2px solid red; padding: 15px; background: rgba(50,0,0,0.8); margin-bottom: 20px;">
+            <h2 style="color: red; margin: 0 0 10px 0;">⚠️ EPILEPSY WARNING ⚠️</h2>
+            <p style="max-width: 300px; font-size: 14px; line-height: 1.4; color: #fff;">
+                This game contains rapidly flashing lights, high-contrast patterns, and spinning visuals which may trigger seizures for people with photosensitive epilepsy. Player discretion is advised.
+            </p>
+        </div>
         <p style="max-width: 300px; font-size: 14px; line-height: 1.4;">
-            WARNING: CONTAINS FLASHING LIGHTS AND DISORIENTING VISUALS.<br><br>
             Desktop: Mouse to Steer<br>
             Mobile: Touch Joystick
         </p>
         <button id="start-btn" disabled>LOADING...</button>
-        <div id="game-over">SYSTEM FAILURE</div>
     </div>
+    <div id="game-over">SYSTEM FAILURE</div>
     <div id="input-zone"></div>
     <div id="ui-layer">
         <div id="score-display">DIST: 0</div>
         <div id="adhd-text">ADHD LEVEL: CALCULATING...</div>
+        <div id="health-container">
+            <div id="health-bar"></div>
+        </div>
     </div>
     <div id="glitch-overlay"></div>
     <script type="module" src="./src/main.js"></script>

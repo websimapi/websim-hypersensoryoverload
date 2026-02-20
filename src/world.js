@@ -14,7 +14,7 @@ export class World {
         this.initObstacles();
         this.initFans();
         this.initTetrahedrons();
-        this.initBars();
+        this.initPacmans();
     }
 
     initTunnel() {
@@ -41,7 +41,7 @@ export class World {
     }
 
     initObstacles() {
-        // Create instanced mesh for boxes
+        // Create instanced mesh for boxes - Reduced Count
         const geometry = new THREE.BoxGeometry(2, 2, 2);
         const material = new THREE.MeshStandardMaterial({ 
             map: this.obstacleTexture,
@@ -50,50 +50,40 @@ export class World {
             color: 0xff0000
         });
         
-        this.obstacleCount = 150;
+        this.obstacleCount = 40; // Reduced from 150
         this.obstacles = new THREE.InstancedMesh(geometry, material, this.obstacleCount);
-        this.obstacleData = []; // Store { t: pathPosition, offset: Vector2 }
+        this.obstacleData = [];
 
         const dummy = new THREE.Object3D();
         
         for (let i = 0; i < this.obstacleCount; i++) {
-            // Distribute randomly along path t, avoiding start zone (0.0 - 0.1)
             const t = randomRange(0.1, 0.95);
-            // Random radial offset
             const angle = Math.random() * Math.PI * 2;
-            const r = randomRange(2, 6); // Within tube radius 8
+            const r = randomRange(4, 10);
             
-            this.obstacleData.push({
-                t: t,
-                angle: angle,
-                radius: r,
-                type: 'box'
-            });
-
+            this.obstacleData.push({ t, angle, radius: r });
             this.updateObstacleMatrix(dummy, i);
         }
-        
         this.scene.add(this.obstacles);
     }
 
     initFans() {
-        // Rotating fans
-        const geometry = new THREE.BoxGeometry(26, 1.5, 1.5); // Long blade spanning new width
+        // Rotating fans - Reduced count and speed
+        const geometry = new THREE.BoxGeometry(26, 1.5, 1.5);
         const material = new THREE.MeshStandardMaterial({ 
             map: this.obstacleTexture,
             color: 0xffff00,
             emissive: 0x333300
         });
 
-        this.fanCount = 20;
+        this.fanCount = 8; // Reduced from 20
         this.fans = new THREE.InstancedMesh(geometry, material, this.fanCount);
         this.fanData = [];
 
         const dummy = new THREE.Object3D();
         for (let i = 0; i < this.fanCount; i++) {
-            // Avoid start area
             const t = randomRange(0.15, 0.95);
-            this.fanData.push({ t: t, speed: randomRange(2, 5) });
+            this.fanData.push({ t: t, speed: randomRange(0.5, 2.0) }); // Slower speed
             this.updateFanMatrix(dummy, i, 0);
         }
         this.scene.add(this.fans);
@@ -109,7 +99,7 @@ export class World {
             emissive: 0x002222
         });
         
-        this.tetraCount = 80;
+        this.tetraCount = 30; // Reduced from 80
         this.tetras = new THREE.InstancedMesh(geometry, material, this.tetraCount);
         this.tetraData = [];
         
@@ -125,27 +115,33 @@ export class World {
         this.scene.add(this.tetras);
     }
 
-    initBars() {
-        // Rotating barriers that block the center
-        const geometry = new THREE.BoxGeometry(20, 2, 2);
+    initPacmans() {
+        // "Pacman" shape: Cylinder with a wedge missing
+        // Radius 14 (tube size), Height 2
+        // ThetaLength 5.2 (gap of ~1.08 rad)
+        const geometry = new THREE.CylinderGeometry(13.5, 13.5, 2, 32, 1, false, 0, 5.2);
+        // Rotate geometry so it faces Z axis (tube length)
+        geometry.rotateX(Math.PI / 2);
+
         const material = new THREE.MeshStandardMaterial({ 
             map: this.obstacleTexture, 
             color: 0xff00ff,
-            emissive: 0x440044
+            emissive: 0x440044,
+            side: THREE.DoubleSide
         });
         
-        this.barCount = 30;
-        this.bars = new THREE.InstancedMesh(geometry, material, this.barCount);
-        this.barData = [];
+        this.pacCount = 15;
+        this.pacs = new THREE.InstancedMesh(geometry, material, this.pacCount);
+        this.pacData = [];
         
         const dummy = new THREE.Object3D();
-        for(let i=0; i<this.barCount; i++) {
+        for(let i=0; i<this.pacCount; i++) {
             const t = randomRange(0.15, 0.95);
-            // Center them mostly
-            this.barData.push({ t, speed: randomRange(1, 3) * (Math.random()>0.5?1:-1) });
-            this.updateBarMatrix(dummy, i, 0);
+            const speed = randomRange(0.5, 1.5) * (Math.random()>0.5?1:-1);
+            this.pacData.push({ t, speed });
+            this.updatePacMatrix(dummy, i, 0);
         }
-        this.scene.add(this.bars);
+        this.scene.add(this.pacs);
     }
 
     updateObstacleMatrix(dummy, index) {
@@ -195,17 +191,18 @@ export class World {
         this.tetras.setMatrixAt(index, dummy.matrix);
     }
 
-    updateBarMatrix(dummy, index, time) {
-        const data = this.barData[index];
+    updatePacMatrix(dummy, index, time) {
+        const data = this.pacData[index];
         const point = this.path.getPointAt(data.t);
         const tangent = this.path.getTangentAt(data.t);
         
         dummy.position.copy(point);
         dummy.lookAt(point.clone().add(tangent));
-        dummy.rotateZ(time * data.speed + index); // Index offset for variety
+        // Rotate around Z axis (which is local tangent)
+        dummy.rotateZ(time * data.speed + index); 
         
         dummy.updateMatrix();
-        this.bars.setMatrixAt(index, dummy.matrix);
+        this.pacs.setMatrixAt(index, dummy.matrix);
     }
 
     update(time, speed) {
@@ -226,36 +223,32 @@ export class World {
         }
         this.tetras.instanceMatrix.needsUpdate = true;
 
-        // Update bars
-        for (let i = 0; i < this.barCount; i++) {
-            this.updateBarMatrix(dummy, i, time);
+        // Update Pacs
+        for (let i = 0; i < this.pacCount; i++) {
+            this.updatePacMatrix(dummy, i, time);
         }
-        this.bars.instanceMatrix.needsUpdate = true;
+        this.pacs.instanceMatrix.needsUpdate = true;
     }
 
-    checkCollision(playerPos, playerT) {
+    checkCollision(playerPos, playerT, playerLocalPos) {
         // Simple distance check against nearby obstacles
         // Optimization: only check obstacles where |obstacle.t - playerT| is small
         // Handling wrap-around logic for t (0 and 1 are same)
         
-        const checkThreshold = 0.02; 
+        const checkThreshold = 0.015; // Tighter longitudinal check
         const crashDist = 2.5;
 
         // Check boxes
         for (let i = 0; i < this.obstacleCount; i++) {
             const ob = this.obstacleData[i];
             let dt = Math.abs(ob.t - playerT);
-            if (dt > 0.5) dt = 1.0 - dt; // Wrap around distance
+            if (dt > 0.5) dt = 1.0 - dt; 
 
             if (dt < checkThreshold) {
-                // Precise check
                 const dummy = new THREE.Object3D();
                 this.obstacles.getMatrixAt(i, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                
-                if (dummy.position.distanceTo(playerPos) < crashDist) {
-                    return true;
-                }
+                if (dummy.position.distanceTo(playerPos) < crashDist) return true;
             }
         }
 
@@ -267,16 +260,8 @@ export class World {
 
             if (dt < checkThreshold) {
                 const point = this.path.getPointAt(ob.t);
-                // Reduce fan kill zone, but fans are now larger. 
-                // Just check if we are hitting the central blade area.
-                // Simple check: if close to plane of fan (dt is small), check distance to center
-                // But blades are rotating. Let's just make the hub dangerous and tips dangerous?
-                // For simplicity: Fan is a "Wall" with holes. 
-                // Let's just assume if you are close to the fan plane, you are safe only at specific angles?
-                // Too complex. Let's just make the Hub lethal.
-                if (point.distanceTo(playerPos) < 4.0) { 
-                     return true;
-                }
+                // Center hub collision
+                if (point.distanceTo(playerPos) < 4.0) return true;
             }
         }
 
@@ -287,55 +272,45 @@ export class World {
             if (dt > 0.5) dt = 1.0 - dt;
 
             if (dt < checkThreshold) {
-                // Precise check
                 const dummy = new THREE.Object3D();
                 this.tetras.getMatrixAt(i, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                
-                if (dummy.position.distanceTo(playerPos) < 3.0) { // Hitbox size
-                    return true;
-                }
+                if (dummy.position.distanceTo(playerPos) < 3.0) return true;
             }
         }
 
-        // Check Bars
-        for (let i = 0; i < this.barCount; i++) {
-            const ob = this.barData[i];
+        // Check Pacmans (The Gates)
+        for (let i = 0; i < this.pacCount; i++) {
+            const ob = this.pacData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
-            if (dt < checkThreshold) {
-                // Bars rotate. We can approximate collision by checking distance to center (it spins).
-                // If distance < 10 (bar half length) AND distance > 2 (safe zone in middle?) NO.
-                // It's a solid bar. You have to go AROUND it.
-                // Bar length is 20. Tube radius is 14.
-                // So bar spans -10 to 10. There is 4 units of gap on either side of the tube.
+            if (dt < 0.01) { // Very thin collision plane
+                // We need to check if player is inside the safe wedge
+                // Player's local angle:
+                // atan2(y, x) gives angle in [-PI, PI]
+                let playerAngle = Math.atan2(playerLocalPos.y, playerLocalPos.x); 
+                if (playerAngle < 0) playerAngle += Math.PI * 2; // Normalize 0 - 2PI
+
+                // Obstacle rotation at this time
+                // Matches the updatePacMatrix logic:
+                const time = this.uniforms.time.value;
+                let pacRotation = (time * ob.speed + i) % (Math.PI * 2);
+                if (pacRotation < 0) pacRotation += Math.PI * 2;
+
+                // The solid part is [pacRotation, pacRotation + 5.2]
+                // The gap is [pacRotation + 5.2, pacRotation + 2PI] (wrapped)
+                // We check if playerAngle hits the solid part.
                 
-                // We need to know the bar's orientation to know where the gap is.
-                // But since we are updating matrices on the fly, we can just grab the position?
-                // No, the rotation is crucial.
-                
-                // Let's do a simplified check:
-                // Get the Bar's "Right" vector in world space.
-                const dummy = new THREE.Object3D();
-                this.bars.getMatrixAt(i, dummy.matrix);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                
-                // Project player pos onto the plane of the bar
-                const distToCenter = dummy.position.distanceTo(playerPos);
-                
-                // If we are close to the bar longitudinally (checked by dt), check if we intersect the bar volume
-                // Bar is effectively a line segment rotating.
-                // Let's assume if distToCenter < 10.5, we might hit.
-                // We need to check if we are "aligned" with the bar.
-                // This is hard to do cheaply without raycasting.
-                
-                // CHEAT: Just treat the bar as a "Cross" of spheres for now to save CPU?
-                // No, let's just make it a "Gate" that you have to be at the edge for.
-                // If distance to center < 9.0, you crash.
-                // This means the bar is spinning fast enough to be a disc effectively.
-                if (distToCenter < 9.0) {
-                     return true;
+                // Normalize all to handle wrap around
+                // Easier: Subtract pacRotation from playerAngle. Result should be in [5.2, 2PI]
+                let relativeAngle = playerAngle - pacRotation;
+                while (relativeAngle < 0) relativeAngle += Math.PI * 2;
+                while (relativeAngle >= Math.PI * 2) relativeAngle -= Math.PI * 2;
+
+                // Solid part is 0 to 5.2
+                if (relativeAngle < 5.2) {
+                    return true;
                 }
             }
         }

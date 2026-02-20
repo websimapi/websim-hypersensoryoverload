@@ -9,8 +9,9 @@ const state = {
     distance: 0,
     time: 0,
     health: 100,
+    lastHitTime: -10,
     t: 0, // Path position 0-1
-    maxSpeed: 80,
+    maxSpeed: 120, // Increased max speed potential
     shake: 0
 };
 
@@ -119,6 +120,9 @@ function startGame() {
         
         state.playing = true;
         state.speed = 20;
+        state.health = 100;
+        state.distance = 0;
+        document.getElementById('game-over').style.display = 'none';
         
         animate();
     } catch (e) {
@@ -130,7 +134,9 @@ function startGame() {
 // UI updates
 const scoreEl = document.getElementById('score-display');
 const adhdEl = document.getElementById('adhd-text');
+const healthBarEl = document.getElementById('health-bar');
 const glitchEl = document.getElementById('glitch-overlay');
+const gameOverEl = document.getElementById('game-over');
 
 const flavorTexts = [
     "ADHD LEVEL: 240%", "FOCUS LOST", "DOPAMINE LOW", "HYPERFOCUS ENGAGED", 
@@ -157,8 +163,33 @@ function animate() {
     state.time += dt;
 
     // Movement Logic
-    // Accelerate
-    if (state.speed < state.maxSpeed) state.speed += dt * 5;
+    // Accelerate progressively if not hit recently
+    if (state.time - state.lastHitTime > 1.0) {
+        if (state.speed < state.maxSpeed) state.speed += dt * 2.0;
+    }
+
+    // Health Regeneration
+    if (state.time - state.lastHitTime > 3.0 && state.health < 100) {
+        state.health += dt * 10; // Regen 10 health per second
+        if (state.health > 100) state.health = 100;
+    }
+
+    // Health Bar Color & Width
+    healthBarEl.style.width = state.health + '%';
+    if (state.health < 30) healthBarEl.style.background = '#f00';
+    else if (state.health < 60) healthBarEl.style.background = '#ff0';
+    else healthBarEl.style.background = '#0f0';
+
+    // Game Over
+    if (state.health <= 0) {
+        state.playing = false;
+        gameOverEl.style.display = 'block';
+        audio.setEnginePitch(0);
+        document.getElementById('start-btn').innerText = "RESTART";
+        document.getElementById('start-screen').style.display = 'flex';
+        document.getElementById('start-screen').style.opacity = '1';
+        return;
+    }
     
     // Path progression
     // Speed is units per second. Path length ~ 100 * segments?
@@ -198,8 +229,10 @@ function animate() {
         // Wall Hit Damage
         if (state.shake <= 0) {
             state.shake = 0.5;
-            state.speed *= 0.7; // Lose speed from scraping
-            audio.play('crash', false, 0.4);
+            state.speed *= 0.8; // Lose speed from scraping
+            state.health -= 2; // Minor damage for wall scraping
+            state.lastHitTime = state.time;
+            audio.play('crash', false, 0.3);
             glitchEl.style.opacity = 0.5;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
         }
@@ -227,11 +260,13 @@ function animate() {
     // Collision with Obstacles
     const worldPlayerPos = playerShip.getWorldPosition(new THREE.Vector3());
     
-    if (world.checkCollision(worldPlayerPos, state.t)) {
+    if (world.checkCollision(worldPlayerPos, state.t, playerPosLocal)) {
         // Hard Crash!
         if (state.shake <= 0) {
             state.shake = 1.0;
-            state.speed *= 0.5; // Lose more speed
+            state.speed *= 0.6; // Lose more speed
+            state.health -= 15; // Major damage (approx 7 hits to kill if no regen)
+            state.lastHitTime = state.time;
             audio.play('crash', false, 0.8);
             glitchEl.style.opacity = 1;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
