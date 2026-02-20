@@ -99,16 +99,10 @@ joystickManager.on('end', () => {
     input.y = 0;
 });
 
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowUp' || e.key === 'w') input.y = 1;
-    if (e.key === 'ArrowDown' || e.key === 's') input.y = -1;
-    if (e.key === 'ArrowLeft' || e.key === 'a') input.x = -1;
-    if (e.key === 'ArrowRight' || e.key === 'd') input.x = 1;
-});
-
-window.addEventListener('keyup', (e) => {
-    if (['ArrowUp', 'w', 'ArrowDown', 's'].includes(e.key)) input.y = 0;
-    if (['ArrowLeft', 'a', 'ArrowRight', 'd'].includes(e.key)) input.x = 0;
+window.addEventListener('mousemove', (e) => {
+    // Map mouse position to -1 to 1 range based on window size
+    input.x = (e.clientX / window.innerWidth) * 2 - 1;
+    input.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
 
 function startGame() {
@@ -187,23 +181,37 @@ function animate() {
     cameraRig.matrix.lookAt(cameraRig.position, lookAt, normal);
     cameraRig.quaternion.setFromRotationMatrix(cameraRig.matrix);
 
-    // Player Local Movement (Dodge)
-    const speedX = 30 * dt;
-    const speedY = 30 * dt;
-    playerPosLocal.x += input.x * speedX;
-    playerPosLocal.y += input.y * speedY;
+    // Player Local Movement (Mouse Follow)
+    // Map input (-1 to 1) to tube radius (target ~7.5)
+    const targetX = input.x * 7.5;
+    const targetY = input.y * 7.5;
     
-    // Clamp inside tube (Radius 8, keep player within ~6)
-    const rLimit = 6;
-    if (playerPosLocal.length() > rLimit) {
-        playerPosLocal.setLength(rLimit);
+    // Smooth lerp to target
+    playerPosLocal.x += (targetX - playerPosLocal.x) * 10 * dt;
+    playerPosLocal.y += (targetY - playerPosLocal.y) * 10 * dt;
+
+    // Wall Collision
+    const dist = playerPosLocal.length();
+    const wallLimit = 7.0; 
+
+    if (dist > wallLimit) {
+        // Wall Hit Damage
+        if (state.shake <= 0) {
+            state.shake = 0.5;
+            state.speed *= 0.7; // Lose speed from scraping
+            audio.play('crash', false, 0.4);
+            glitchEl.style.opacity = 0.5;
+            setTimeout(() => glitchEl.style.opacity = 0, 100);
+        }
+        // Force back slightly to keep inside bounds visually
+        playerPosLocal.setLength(wallLimit - 0.1);
     }
 
     // Apply local position to ship
     playerShip.position.set(playerPosLocal.x, playerPosLocal.y, 0);
     
     // Bank ship
-    playerShip.rotation.z = -input.x * 0.5 + Math.sin(state.time * 10) * 0.05 * (state.speed/50); // Add jitter
+    playerShip.rotation.z = (playerPosLocal.x - targetX) * 0.1 + Math.sin(state.time * 10) * 0.05 * (state.speed/50);
 
     // Update World
     world.update(state.time, state.speed);
@@ -216,20 +224,15 @@ function animate() {
         if (state.shake < 0) state.shake = 0;
     }
 
-    // Collision
-    // World coordinates of player for collision
+    // Collision with Obstacles
     const worldPlayerPos = playerShip.getWorldPosition(new THREE.Vector3());
     
-    // Note: collision check in World is approximated. 
-    // We pass world pos, but world check needs to know approximate T to save time.
     if (world.checkCollision(worldPlayerPos, state.t)) {
-        // Crash!
-        if (state.shake === 0) { // If not already crashing
+        // Hard Crash!
+        if (state.shake <= 0) {
             state.shake = 1.0;
-            state.speed *= 0.5; // Lose speed
+            state.speed *= 0.5; // Lose more speed
             audio.play('crash', false, 0.8);
-            
-            // Glitch Effect
             glitchEl.style.opacity = 1;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
         }
