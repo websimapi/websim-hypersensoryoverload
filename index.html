@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HyperSensoryOverload</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 50;
+        }
+        #score-display {
+            color: #0ff;
+            font-size: 24px;
+            text-shadow: 0 0 10px #0ff;
+        }
+        #adhd-text {
+            color: #f0f;
+            font-size: 16px;
+            text-shadow: 0 0 5px #f0f;
+            text-align: right;
+        }
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            color: white;
+            text-align: center;
+        }
+        h1 {
+            font-size: 40px;
+            color: #f0f;
+            text-transform: uppercase;
+            text-shadow: 4px 4px 0px #0ff;
+            margin-bottom: 10px;
+            letter-spacing: 4px;
+        }
+        button {
+            background: #0ff;
+            color: #000;
+            border: none;
+            padding: 20px 40px;
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 0 20px #0ff;
+            margin-top: 20px;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 20px #0ff; }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px #0ff; }
+            100% { transform: scale(1); box-shadow: 0 0 20px #0ff; }
+        }
+        #glitch-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: white;
+            opacity: 0;
+            mix-blend-mode: exclusion;
+            z-index: 20;
+        }
+        #game-over {
+            display: none;
+            color: #f00;
+            font-size: 50px;
+            text-shadow: 0 0 20px #f00;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.160.0",
+                "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+                "nipplejs": "https://esm.sh/nipplejs@0.10.1"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="start-screen">
+        <h1>Hyper Sensory<br>Overload</h1>
+        <p style="max-width: 300px; font-size: 14px; line-height: 1.4;">
+            WARNING: CONTAINS FLASHING LIGHTS AND DISORIENTING VISUALS.<br><br>
+            Desktop: WASD / Arrows<br>
+            Mobile: Touch Joystick
+        </p>
+        <button id="start-btn">INITIALIZE</button>
+        <div id="game-over">SYSTEM FAILURE</div>
+    </div>
+    <div id="ui-layer">
+        <div id="score-display">DIST: 0</div>
+        <div id="adhd-text">ADHD LEVEL: CALCULATING...</div>
+    </div>
+    <div id="glitch-overlay"></div>
+    <script type="module" src="./src/main.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
