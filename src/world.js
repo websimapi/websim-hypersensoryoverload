@@ -28,7 +28,7 @@ export class World {
         this.uniforms = {
             time: { value: 0 },
             map: { value: this.texture },
-            distortion: { value: 1.2 }, // Reduced to prevent wall clipping
+            distortion: { value: 0.1 }, // Drastically reduced to ensure visual/physics alignment
             speedEffect: { value: 1.0 }
         };
 
@@ -304,29 +304,58 @@ export class World {
 
         // 4. Pacmans (The Gates)
         // Solid arc: 0 to 5.0 (Visual)
-        // Hit arc: 0 to 4.8 (Give extra margin at edges)
+        // Gap: 5.0 to 6.28
         for (let i = 0; i < this.pacCount; i++) {
             const ob = this.pacData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
-            // Only check when we are practically inside the ring
-            if (dt < 0.005) { 
-                let playerAngle = Math.atan2(playerLocalPos.y, playerLocalPos.x); 
-                if (playerAngle < 0) playerAngle += Math.PI * 2;
+            // Increased threshold slightly to ensure we don't skip it at high speeds
+            if (dt < 0.02) { 
+                this.pacs.getMatrixAt(i, _matrix);
+                _invMatrix.copy(_matrix).invert();
+                _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
 
-                const time = this.uniforms.time.value;
-                let pacRotation = (time * ob.speed + i) % (Math.PI * 2);
-                if (pacRotation < 0) pacRotation += Math.PI * 2;
+                // Check if we are inside the "slab" of the pacman (Z-thickness)
+                // Height is 2.0 (local Y in cylinder geo terms, but rotated X by 90)
+                // Cylinder default: Y is up. We rotated X 90. So local Z is the thickness.
+                // Wait: Geometry is Cylinder(radius, radius, 2, ...).
+                // Initial rotation: rotateX(PI/2).
+                // So the "Thickness" (height=2) is now along the World Z (or Local Z).
+                
+                // Let's check local bounds.
+                // Cylinder local coordinates: X, Y are the circle. Z is thickness (after rotation).
+                // Actually after rotateX(90), the original Y axis becomes Z axis.
+                // So in local space: X, Z are the circle. Y is thickness? No.
+                // Original: Y is axis. X,Z are circle.
+                // Rotated X 90: Old Y -> New Z. Old Z -> New -Y.
+                // So New Z is the axis (thickness). New X, New Y are the circle.
+                
+                // Check thickness (Z axis)
+                if (Math.abs(_playerLocal.z) < 0.8) { // Thickness 2.0, half 1.0. 0.8 safety
+                    // Check radius (X, Y plane)
+                    const distSq = _playerLocal.x * _playerLocal.x + _playerLocal.y * _playerLocal.y;
+                    if (distSq < 20 * 20) { // If within outer radius (approx)
+                         // Check angle
+                        let angle = Math.atan2(_playerLocal.y, _playerLocal.x); 
+                        // Note: CylinderGeometry starts theta at +Z axis? 
+                        // Standard atan2 is from +X axis.
+                        // ThreeJS Cylinder theta starts at +X axis in the XZ plane (unrotated).
+                        // After rotation, it should correspond to XY plane angle.
+                        
+                        if (angle < 0) angle += Math.PI * 2;
 
-                let relativeAngle = playerAngle - pacRotation;
-                while (relativeAngle < 0) relativeAngle += Math.PI * 2;
-                while (relativeAngle >= Math.PI * 2) relativeAngle -= Math.PI * 2;
-
-                // Visual gap starts at 5.0. 
-                // Collision if angle < 4.8 (Safety margin of 0.2 rads)
-                if (relativeAngle < 4.8) {
-                    return true;
+                        // The geometry is generated with thetaLength 5.0
+                        // Visual solid: 0 to 5.0 radians.
+                        // Gap: 5.0 to 2PI.
+                        // We assume the mesh local rotation handles the spinning.
+                        // So we just check the static local angle.
+                        
+                        // Hit if inside the solid arc (0 to 4.9)
+                        if (angle < 4.9) {
+                            return true;
+                        }
+                    }
                 }
             }
         }

@@ -226,6 +226,7 @@ function animate() {
     // 1. Player Rig (At current t)
     const playerPoint = world.path.getPointAt(state.t);
     const playerTangent = world.path.getTangentAt(state.t).normalize();
+    // Consistent tunnel roll
     const normal = new THREE.Vector3(0, 1, 0).applyAxisAngle(playerTangent, state.time * 0.1); 
     
     playerRig.position.copy(playerPoint);
@@ -233,25 +234,41 @@ function animate() {
     const playerMatrix = new THREE.Matrix4().lookAt(playerRig.position, playerLookAt, normal);
     playerRig.quaternion.setFromRotationMatrix(playerMatrix);
 
-    // 2. Camera Rig (Trailing behind to fix culling)
-    // Lag distance roughly 10 units behind
-    let camLag = 10.0 / pathLen; 
+    // 2. Camera Rig (Trailing behind)
+    let camLag = 12.0 / pathLen; 
     let camT = state.t - camLag;
     if (camT < 0) camT += 1;
 
     const camPoint = world.path.getPointAt(camT);
-    // Camera orientation matches player orientation's "Up" to keep floor consistent
-    // But it looks at the player rig
     
+    // Position camera rig on the path
     cameraRig.position.copy(camPoint);
-    cameraRig.lookAt(playerRig.position); 
-    // Apply the roll (twist) manually to match the tunnel twist
-    // We calculate the roll at camT and apply it
+
+    // Dynamic Tracking:
+    // Instead of looking at the center of the tunnel, look at the actual ship position
+    const targetLookAt = playerShip.getWorldPosition(new THREE.Vector3());
+    
+    // Calculate a proper Up vector for the camera based on the path
+    // We want the camera to roll with the "floor" of the tunnel
     const camTangent = world.path.getTangentAt(camT).normalize();
-    const camNormal = new THREE.Vector3(0, 1, 0).applyAxisAngle(camTangent, state.time * 0.1);
-    // Force up vector
-    const camMatrix = new THREE.Matrix4().lookAt(cameraRig.position, playerRig.position, camNormal);
-    cameraRig.quaternion.setFromRotationMatrix(camMatrix);
+    
+    // We match the player's rolling frame roughly so up is "up" relative to the tunnel rotation
+    const camUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(camTangent, state.time * 0.1);
+
+    // Look at the ship
+    const camMatrix = new THREE.Matrix4().lookAt(cameraRig.position, targetLookAt, camUp);
+    
+    // Smoothly interpolate quaternion to prevent jitters if the ship moves erratically
+    const targetquat = new THREE.Quaternion().setFromRotationMatrix(camMatrix);
+    cameraRig.quaternion.slerp(targetquat, 0.1);
+
+    // Add dynamic offset to the camera itself (child of rig) to create parallax/weight
+    // When moving LEFT, camera moves slightly RIGHT to emphasize motion
+    const camSwayX = -playerPosLocal.x * 0.3;
+    const camSwayY = -playerPosLocal.y * 0.3 + 1.5; // +1.5 keeps height
+    
+    camera.position.x += (camSwayX - camera.position.x) * 0.1;
+    camera.position.y += (camSwayY - camera.position.y) * 0.1;
 
     // --- Control Logic ---
     
@@ -288,13 +305,12 @@ function animate() {
     if (currentDist > wallHitThreshold) {
         if (state.shake <= 0) {
             state.shake = 0.5;
-            state.speed *= 0.85;
-            state.health -= 1; // Minor scrape damage
+            state.speed *= 0.90; // Less penalty
+            state.health -= 0.5; // Very minor scrape damage
             state.lastHitTime = state.time;
-            audio.play('crash', false, 0.2);
-            glitchEl.style.opacity = 0.3;
-            setTimeout(() => glitchEl.style.opacity = 0, 100);
+            audio.play('crash', false, 0.1);
         }
+        // Hard clamp position
         playerPosLocal.setLength(wallHitThreshold - 0.01);
     }
 
@@ -307,14 +323,12 @@ function animate() {
     // Update World
     world.update(state.time, state.speed);
     
-    // Camera Shake
+    // Camera Shake (Additive to sway)
     if (state.shake > 0) {
-        camera.position.x = (Math.random() - 0.5) * state.shake;
-        camera.position.y = 1.5 + (Math.random() - 0.5) * state.shake; // Maintain Y offset
+        camera.position.x += (Math.random() - 0.5) * state.shake;
+        camera.position.y += (Math.random() - 0.5) * state.shake;
         state.shake -= dt * 2;
         if (state.shake < 0) state.shake = 0;
-    } else {
-        camera.position.set(0, 1.5, 0);
     }
 
     // Collision with Obstacles
