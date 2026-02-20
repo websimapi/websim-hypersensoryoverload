@@ -182,9 +182,9 @@ function animate() {
     cameraRig.quaternion.setFromRotationMatrix(cameraRig.matrix);
 
     // Player Local Movement (Mouse Follow)
-    // Map input (-1 to 1) to tube radius (target ~7.5)
-    const targetX = input.x * 7.5;
-    const targetY = input.y * 7.5;
+    // Map input (-1 to 1) to tube radius (target ~12.0)
+    const targetX = input.x * 12.0;
+    const targetY = input.y * 12.0;
     
     // Smooth lerp to target
     playerPosLocal.x += (targetX - playerPosLocal.x) * 10 * dt;
@@ -192,7 +192,7 @@ function animate() {
 
     // Wall Collision
     const dist = playerPosLocal.length();
-    const wallLimit = 7.0; 
+    const wallLimit = 13.0; 
 
     if (dist > wallLimit) {
         // Wall Hit Damage
