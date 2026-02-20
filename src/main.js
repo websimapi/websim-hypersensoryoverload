@@ -11,7 +11,7 @@ const state = {
     health: 100,
     lastHitTime: -10,
     t: 0, // Path position 0-1
-    maxSpeed: 120, // Increased max speed potential
+    maxSpeed: 200, // Faster max speed
     shake: 0
 };
 
@@ -90,8 +90,10 @@ const joystickManager = nipplejs.create({
 
 joystickManager.on('move', (evt, data) => {
     if (data && data.vector) {
-        input.x = data.vector.x;
-        input.y = data.vector.y;
+        // Use force to allow subtle movements, clamped to 1.0
+        const force = Math.min(data.force, 1.0);
+        input.x = data.vector.x * force;
+        input.y = data.vector.y * force;
     }
 });
 
@@ -119,7 +121,7 @@ function startGame() {
         audio.play('engine', true, 0.4);
         
         state.playing = true;
-        state.speed = 20;
+        state.speed = 80; // Higher base speed
         state.health = 100;
         state.distance = 0;
         document.getElementById('game-over').style.display = 'none';
@@ -165,12 +167,12 @@ function animate() {
     // Movement Logic
     // Accelerate progressively if not hit recently
     if (state.time - state.lastHitTime > 1.0) {
-        if (state.speed < state.maxSpeed) state.speed += dt * 2.0;
+        if (state.speed < state.maxSpeed) state.speed += dt * 8.0; // Faster acceleration
     }
 
     // Health Regeneration
-    if (state.time - state.lastHitTime > 3.0 && state.health < 100) {
-        state.health += dt * 10; // Regen 10 health per second
+    if (state.time - state.lastHitTime > 2.0 && state.health < 100) {
+        state.health += dt * 15; // Faster regen
         if (state.health > 100) state.health = 100;
     }
 
@@ -217,9 +219,9 @@ function animate() {
     const targetX = input.x * 12.0;
     const targetY = input.y * 12.0;
     
-    // Smooth lerp to target
-    playerPosLocal.x += (targetX - playerPosLocal.x) * 10 * dt;
-    playerPosLocal.y += (targetY - playerPosLocal.y) * 10 * dt;
+    // Smooth lerp to target - Higher value for snappier controls
+    playerPosLocal.x += (targetX - playerPosLocal.x) * 20 * dt;
+    playerPosLocal.y += (targetY - playerPosLocal.y) * 20 * dt;
 
     // Wall Collision
     const dist = playerPosLocal.length();
