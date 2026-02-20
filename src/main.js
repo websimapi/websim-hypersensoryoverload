@@ -36,15 +36,39 @@ const audio = new AudioManager();
 const textureLoader = new THREE.TextureLoader();
 let world;
 
+const loadTexture = (path) => {
+    return new Promise(resolve => {
+        textureLoader.load(path, resolve, undefined, () => {
+            console.error(`Failed to load texture: ${path}`);
+            // Return a simple fallback texture
+            const canvas = document.createElement('canvas');
+            canvas.width = 2; canvas.height = 2;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0,0,2,2);
+            ctx.fillStyle = '#ff00ff';
+            ctx.fillRect(0,0,1,1);
+            const tex = new THREE.CanvasTexture(canvas);
+            resolve(tex);
+        });
+    });
+};
+
 Promise.all([
-    new Promise(resolve => textureLoader.load('wall_texture.png', resolve)),
-    new Promise(resolve => textureLoader.load('hazard_texture.png', resolve)),
-    audio.load('bgm', 'bgm.mp3'),
-    audio.load('engine', 'engine.mp3'),
-    audio.load('crash', 'crash.mp3')
+    loadTexture('wall_texture.png'),
+    loadTexture('hazard_texture.png'),
+    audio.load('bgm', 'bgm.mp3').catch(e => console.error(e)),
+    audio.load('engine', 'engine.mp3').catch(e => console.error(e)),
+    audio.load('crash', 'crash.mp3').catch(e => console.error(e))
 ]).then(([wallTex, hazTex]) => {
     world = new World(scene, wallTex, hazTex);
-    document.getElementById('start-btn').addEventListener('click', startGame);
+    const btn = document.getElementById('start-btn');
+    btn.innerText = "INITIALIZE";
+    btn.disabled = false;
+    btn.addEventListener('click', startGame);
+}).catch(err => {
+    console.error("Fatal loading error", err);
+    document.getElementById('start-btn').innerText = "SYSTEM ERROR";
 });
 
 // Player Ship (Invisible or simple mesh, camera is attached to it)

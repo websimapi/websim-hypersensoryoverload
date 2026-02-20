@@ -55,8 +55,8 @@ export class World {
         const dummy = new THREE.Object3D();
         
         for (let i = 0; i < this.obstacleCount; i++) {
-            // Distribute randomly along path t (0 to 1)
-            const t = Math.random();
+            // Distribute randomly along path t, avoiding start zone (0.0 - 0.1)
+            const t = randomRange(0.1, 0.95);
             // Random radial offset
             const angle = Math.random() * Math.PI * 2;
             const r = randomRange(2, 6); // Within tube radius 8
@@ -89,7 +89,8 @@ export class World {
 
         const dummy = new THREE.Object3D();
         for (let i = 0; i < this.fanCount; i++) {
-            const t = Math.random();
+            // Avoid start area
+            const t = randomRange(0.15, 0.95);
             this.fanData.push({ t: t, speed: randomRange(2, 5) });
             this.updateFanMatrix(dummy, i, 0);
         }
@@ -171,17 +172,9 @@ export class World {
             if (dt > 0.5) dt = 1.0 - dt;
 
             if (dt < checkThreshold) {
-                // Fan center collision (they block the whole tube mostly, but have gaps)
-                // For simplicity, just check distance to center if player is not "lucky"
-                // Or checking blade rotation? Too complex.
-                // Let's just say if you are too close to center you hit the hub, 
-                // or if you are unlucky.
-                // Let's make fans just obstacles at center.
                 const point = this.path.getPointAt(ob.t);
-                if (point.distanceTo(playerPos) < 7.0) { // Fan blades cover radius 7
-                     // This is brutal. Let's say fan blades are rotating and you might pass.
-                     // For this demo: hitting the "plane" of the fan is a hit.
-                     // Let's be lenient: Fan has hole in middle? No, propeller.
+                // Reduce fan kill zone to just the central hub area to be playable
+                if (point.distanceTo(playerPos) < 3.0) { 
                      return true;
                 }
             }
