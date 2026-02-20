@@ -71,30 +71,39 @@ Promise.all([
     document.getElementById('start-btn').innerText = "SYSTEM ERROR";
 });
 
-// Player Ship
-const cameraRig = new THREE.Object3D();
+// Player & Camera Setup
+// Decoupled rigs for better path tracking and wall collision avoidance
+
+const playerRig = new THREE.Object3D(); // Moves along path
+scene.add(playerRig);
+
+const playerShip = new THREE.Object3D(); // Moves locally (XY)
+playerRig.add(playerShip);
+
+const cameraRig = new THREE.Object3D(); // Moves along path (trailing)
 scene.add(cameraRig);
 
-// Camera is now independent of the ship, attached to the rig directly
-// This prevents the "world rotating around center" effect and lets the ship move visibly on screen
+// Camera is child of its own rig
+// Local offset (0, 1.5, 0) gives slight height
 cameraRig.add(camera);
-camera.position.set(0, 0, 8); // Pull back further to see more context
+camera.position.set(0, 1.5, 0); 
 
-const playerShip = new THREE.Object3D();
-cameraRig.add(playerShip); // Ship moves locally within the rig
-
-// Visual Hitbox (The Player)
-const shipGeo = new THREE.SphereGeometry(0.4, 16, 16);
+// Visual Hitbox (The Player) - Small Cursor
+const shipGeo = new THREE.RingGeometry(0.3, 0.4, 16);
 const shipMat = new THREE.MeshBasicMaterial({ 
     color: 0x00ffff,
-    wireframe: true 
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.8
 });
 const shipMesh = new THREE.Mesh(shipGeo, shipMat);
-const coreGeo = new THREE.SphereGeometry(0.2, 16, 16);
+
+// Core "Hit" Dot
+const coreGeo = new THREE.SphereGeometry(0.15, 8, 8);
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 shipMesh.add(new THREE.Mesh(coreGeo, coreMat));
-playerShip.add(shipMesh);
 
+playerShip.add(shipMesh);
 playerShip.add(pointLight);
 
 // Controls
@@ -207,77 +216,93 @@ function animate() {
     }
     
     // Path progression
-    // Speed is units per second. Path length ~ 100 * segments?
-    // We need real path length.
     const pathLen = world.path.getLength();
     const moveDist = state.speed * dt;
     state.distance += moveDist;
     state.t += moveDist / pathLen;
     if (state.t > 1) state.t -= 1; // Loop
 
-    // Update Camera Rig Position on Path
-    const point = world.path.getPointAt(state.t);
-    const tangent = world.path.getTangentAt(state.t).normalize();
-    const normal = new THREE.Vector3(0, 1, 0).applyAxisAngle(tangent, state.time * 0.1); 
+    // --- Rig Positioning ---
+    // 1. Player Rig (At current t)
+    const playerPoint = world.path.getPointAt(state.t);
+    const playerTangent = world.path.getTangentAt(state.t).normalize();
+    const normal = new THREE.Vector3(0, 1, 0).applyAxisAngle(playerTangent, state.time * 0.1); 
     
-    // Orient Rig
-    const lookAtPos = point.clone().add(tangent);
-    cameraRig.position.copy(point);
-    cameraRig.matrix.lookAt(cameraRig.position, lookAtPos, normal);
-    cameraRig.quaternion.setFromRotationMatrix(cameraRig.matrix);
+    playerRig.position.copy(playerPoint);
+    const playerLookAt = playerPoint.clone().add(playerTangent);
+    const playerMatrix = new THREE.Matrix4().lookAt(playerRig.position, playerLookAt, normal);
+    playerRig.quaternion.setFromRotationMatrix(playerMatrix);
+
+    // 2. Camera Rig (Trailing behind to fix culling)
+    // Lag distance roughly 10 units behind
+    let camLag = 10.0 / pathLen; 
+    let camT = state.t - camLag;
+    if (camT < 0) camT += 1;
+
+    const camPoint = world.path.getPointAt(camT);
+    // Camera orientation matches player orientation's "Up" to keep floor consistent
+    // But it looks at the player rig
+    
+    cameraRig.position.copy(camPoint);
+    cameraRig.lookAt(playerRig.position); 
+    // Apply the roll (twist) manually to match the tunnel twist
+    // We calculate the roll at camT and apply it
+    const camTangent = world.path.getTangentAt(camT).normalize();
+    const camNormal = new THREE.Vector3(0, 1, 0).applyAxisAngle(camTangent, state.time * 0.1);
+    // Force up vector
+    const camMatrix = new THREE.Matrix4().lookAt(cameraRig.position, playerRig.position, camNormal);
+    cameraRig.quaternion.setFromRotationMatrix(camMatrix);
 
     // --- Control Logic ---
     
-    // Calculate visible area at Z=0 (Ship Plane) based on Camera Z
-    // Camera Z is 8. FOV is 90.
-    // Half Height = 8 * tan(45deg) = 8
-    // Total Height = 16.
-    const visibleHeight = 16;
+    // Calculate Dynamic Field of View Height at Player Distance
+    // This ensures 1:1 mouse control regardless of speed or lag
+    const distToPlayer = cameraRig.position.distanceTo(playerRig.position);
+    // h = 2 * d * tan(fov/2)
+    const vFOV = THREE.MathUtils.degToRad(camera.fov);
+    const visibleHeight = 2 * distToPlayer * Math.tan(vFOV / 2);
     const visibleWidth = visibleHeight * (window.innerWidth / window.innerHeight);
 
     // Map Input (-1 to 1) to World Units
     let targetX = input.x * (visibleWidth / 2);
     let targetY = input.y * (visibleHeight / 2);
 
-    // Limit Target to Tube Radius
-    // Radius is ~14. Keep ship somewhat safe.
-    // We want the player to feel they have full control, but hard stop at walls.
-    const maxRadius = 12.0; 
+    // Limit Target to Tube Radius (Tube radius is 18 now)
+    const maxRadius = 15.0; 
     const targetVec = new THREE.Vector2(targetX, targetY);
     
     if (targetVec.length() > maxRadius) {
         targetVec.setLength(maxRadius);
     }
 
-    // Ultra-responsive movement (High Lerp)
-    const lerpFactor = 25.0; 
+    // Direct 1:1 Movement (No Lerp for "hitbox at mouse" feel)
+    // But slight smooth for jitter reduction
+    const lerpFactor = 50.0; // Extremely fast
     playerPosLocal.x += (targetVec.x - playerPosLocal.x) * lerpFactor * dt;
     playerPosLocal.y += (targetVec.y - playerPosLocal.y) * lerpFactor * dt;
 
     // Wall Collision Check
-    // If we are actually touching the wall
     const currentDist = playerPosLocal.length();
-    const wallHitThreshold = 13.0; // Actual visual wall is around 14
+    const wallHitThreshold = 16.0; // Tube is 18
 
     if (currentDist > wallHitThreshold) {
         if (state.shake <= 0) {
             state.shake = 0.5;
-            state.speed *= 0.8;
-            state.health -= 2;
+            state.speed *= 0.85;
+            state.health -= 1; // Minor scrape damage
             state.lastHitTime = state.time;
-            audio.play('crash', false, 0.3);
-            glitchEl.style.opacity = 0.5;
+            audio.play('crash', false, 0.2);
+            glitchEl.style.opacity = 0.3;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
         }
-        playerPosLocal.setLength(wallHitThreshold - 0.1);
+        playerPosLocal.setLength(wallHitThreshold - 0.01);
     }
 
     // Apply local position to ship
     playerShip.position.set(playerPosLocal.x, playerPosLocal.y, 0);
     
-    // Bank ship based on horizontal movement velocity
-    const velocityX = (targetVec.x - playerPosLocal.x);
-    playerShip.rotation.z = -velocityX * 0.1;
+    // Bank ship
+    playerShip.rotation.z = -input.x * 0.5; // Simple bank based on input X
 
     // Update World
     world.update(state.time, state.speed);
@@ -285,9 +310,11 @@ function animate() {
     // Camera Shake
     if (state.shake > 0) {
         camera.position.x = (Math.random() - 0.5) * state.shake;
-        camera.position.y = (Math.random() - 0.5) * state.shake;
+        camera.position.y = 1.5 + (Math.random() - 0.5) * state.shake; // Maintain Y offset
         state.shake -= dt * 2;
         if (state.shake < 0) state.shake = 0;
+    } else {
+        camera.position.set(0, 1.5, 0);
     }
 
     // Collision with Obstacles

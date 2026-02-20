@@ -7,9 +7,9 @@ export function randomRange(min, max) {
 export function generatePath() {
     // Generate a closed loop path that twists and turns
     const points = [];
-    const segmentCount = 100; // Segments in the loop
+    const segmentCount = 200; // More segments for smoother path
     const radius = 150; // General radius of the "track" loop
-    const variation = 40; // Reduced variation for smoother turns
+    const variation = 20; // Drastically reduced variation for smoother turns preventing camera clipping
 
     for (let i = 0; i < segmentCount; i++) {
         const theta = (i / segmentCount) * Math.PI * 2;

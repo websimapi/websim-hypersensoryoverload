@@ -10,7 +10,7 @@ export class World {
     constructor(scene, texture, obstacleTexture) {
         this.scene = scene;
         this.path = generatePath();
-        this.tubeGeometry = new THREE.TubeGeometry(this.path, 400, 14, 16, true);
+        this.tubeGeometry = new THREE.TubeGeometry(this.path, 450, 18, 24, true); // Larger radius (18), smoother
         this.texture = texture;
         this.obstacleTexture = obstacleTexture;
         
@@ -121,9 +121,9 @@ export class World {
 
     initPacmans() {
         // "Pacman" shape: Cylinder with a wedge missing
-        // Radius 14 (tube size), Height 2
-        // ThetaLength 5.2 (gap of ~1.08 rad)
-        const geometry = new THREE.CylinderGeometry(13.5, 13.5, 2, 32, 1, false, 0, 5.2);
+        // Radius 17.5 (matches new tube size 18), Height 2
+        // ThetaLength 5.0 (Larger gap for easier passage)
+        const geometry = new THREE.CylinderGeometry(17.5, 17.5, 2, 32, 1, false, 0, 5.0);
         // Rotate geometry so it faces Z axis (tube length)
         geometry.rotateX(Math.PI / 2);
 
@@ -235,13 +235,14 @@ export class World {
     }
 
     checkCollision(playerPos, playerT, playerLocalPos) {
-        // Precise OBB collision detection
-        const checkThreshold = 0.02; // Roughly check nearby objects
-        const playerRadius = 0.4; // Matches visual size
-
-        // Check boxes (AABB in local space)
-        // Box is 2x2x2 -> Local bounds [-1,1]
-        const boxBounds = 1.0 + playerRadius;
+        // Precise OBB collision detection with REDUCED HITBOXES
+        const checkThreshold = 0.025; // Slightly wider time window but stricter geo check
+        
+        // 1. Boxes
+        // Visual size: 2x2x2 (Half extent 1.0)
+        // Hitbox: 0.8 (Very forgiving)
+        const boxHitSize = 0.8;
+        
         for (let i = 0; i < this.obstacleCount; i++) {
             const ob = this.obstacleData[i];
             let dt = Math.abs(ob.t - playerT);
@@ -252,18 +253,20 @@ export class World {
                 _invMatrix.copy(_matrix).invert();
                 _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
 
-                if (Math.abs(_playerLocal.x) < boxBounds && 
-                    Math.abs(_playerLocal.y) < boxBounds && 
-                    Math.abs(_playerLocal.z) < boxBounds) {
+                // Local OBB Check
+                if (Math.abs(_playerLocal.x) < boxHitSize && 
+                    Math.abs(_playerLocal.y) < boxHitSize && 
+                    Math.abs(_playerLocal.z) < boxHitSize) {
                     return true;
                 }
             }
         }
 
-        // Check fans (AABB in local space)
-        // Fan is 26x1.5x1.5 -> Local bounds x[-13,13], y[-0.75,0.75], z[-0.75,0.75]
-        const fanHalfLen = 13.0 + playerRadius;
-        const fanHalfThick = 0.75 + playerRadius;
+        // 2. Fans
+        // Visual: 26x1.5x1.5
+        // Hitbox: Length 12 (shorter), Thick 0.5 (thinner)
+        const fanLen = 12.0;
+        const fanThick = 0.5;
         
         for (let i = 0; i < this.fanCount; i++) {
             const ob = this.fanData[i];
@@ -275,39 +278,40 @@ export class World {
                 _invMatrix.copy(_matrix).invert();
                 _playerLocal.copy(playerPos).applyMatrix4(_invMatrix);
 
-                if (Math.abs(_playerLocal.x) < fanHalfLen && 
-                    Math.abs(_playerLocal.y) < fanHalfThick && 
-                    Math.abs(_playerLocal.z) < fanHalfThick) {
+                if (Math.abs(_playerLocal.x) < fanLen && 
+                    Math.abs(_playerLocal.y) < fanThick && 
+                    Math.abs(_playerLocal.z) < fanThick) {
                     return true;
                 }
             }
         }
 
-        // Check Tetras (Sphere check is sufficient and smoother)
-        // Radius ~ 3.0?
+        // 3. Tetras
+        // Visual Radius ~2.0
+        // Hitbox Radius 1.2 (Much smaller)
         for (let i = 0; i < this.tetraCount; i++) {
             const ob = this.tetraData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
             if (dt < checkThreshold) {
-                // Get world position of tetra
                 this.tetras.getMatrixAt(i, _matrix);
                 const pos = new THREE.Vector3().setFromMatrixPosition(_matrix);
-                
-                // Tetra radius is roughly 2.0 (geometry radius) + player radius
-                // 2.5 is a fair hit radius
-                if (pos.distanceTo(playerPos) < 2.5) return true;
+                // Simple distance check
+                if (pos.distanceTo(playerPos) < 1.4) return true;
             }
         }
 
-        // Check Pacmans (The Gates)
+        // 4. Pacmans (The Gates)
+        // Solid arc: 0 to 5.0 (Visual)
+        // Hit arc: 0 to 4.8 (Give extra margin at edges)
         for (let i = 0; i < this.pacCount; i++) {
             const ob = this.pacData[i];
             let dt = Math.abs(ob.t - playerT);
             if (dt > 0.5) dt = 1.0 - dt;
 
-            if (dt < 0.015) { // Slightly thicker check
+            // Only check when we are practically inside the ring
+            if (dt < 0.005) { 
                 let playerAngle = Math.atan2(playerLocalPos.y, playerLocalPos.x); 
                 if (playerAngle < 0) playerAngle += Math.PI * 2;
 
@@ -315,16 +319,13 @@ export class World {
                 let pacRotation = (time * ob.speed + i) % (Math.PI * 2);
                 if (pacRotation < 0) pacRotation += Math.PI * 2;
 
-                // Gap is roughly 1.08 radians (~60 degrees)
-                // Solid part is ~5.2 radians
                 let relativeAngle = playerAngle - pacRotation;
                 while (relativeAngle < 0) relativeAngle += Math.PI * 2;
                 while (relativeAngle >= Math.PI * 2) relativeAngle -= Math.PI * 2;
 
-                // Give a little grace period at the edges of the gap?
-                // Solid part is 0 to 5.2. Gap is 5.2 to 6.28.
-                // If we are in solid part, crash.
-                if (relativeAngle < 5.2) {
+                // Visual gap starts at 5.0. 
+                // Collision if angle < 4.8 (Safety margin of 0.2 rads)
+                if (relativeAngle < 4.8) {
                     return true;
                 }
             }
