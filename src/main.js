@@ -82,7 +82,7 @@ playerShip.add(pointLight); // Light moves with player
 // Controls
 const input = { x: 0, y: 0 };
 const joystickManager = nipplejs.create({
-    zone: document.body,
+    zone: document.getElementById('input-zone'),
     mode: 'dynamic',
     color: 'cyan'
 });
@@ -112,13 +112,25 @@ window.addEventListener('keyup', (e) => {
 });
 
 function startGame() {
-    document.getElementById('start-screen').style.display = 'none';
-    audio.resume();
-    audio.play('bgm', true, 0.6);
-    audio.play('engine', true, 0.4);
-    state.playing = true;
-    state.speed = 20; // Start moving
-    animate();
+    try {
+        console.log("Starting game...");
+        const startScreen = document.getElementById('start-screen');
+        startScreen.style.transition = 'opacity 0.5s';
+        startScreen.style.opacity = '0';
+        setTimeout(() => startScreen.style.display = 'none', 500);
+
+        audio.resume();
+        audio.play('bgm', true, 0.6);
+        audio.play('engine', true, 0.4);
+        
+        state.playing = true;
+        state.speed = 20;
+        
+        animate();
+    } catch (e) {
+        console.error(e);
+        alert("Error starting game: " + e.message);
+    }
 }
 
 // UI updates
