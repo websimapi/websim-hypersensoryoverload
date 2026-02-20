@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { World } from './world.js';
 import { AudioManager } from './audio.js';
-import nipplejs from 'nipplejs';
 
 const state = {
     playing: false,
@@ -76,55 +75,51 @@ Promise.all([
 const cameraRig = new THREE.Object3D();
 scene.add(cameraRig);
 
+// Camera is now independent of the ship, attached to the rig directly
+// This prevents the "world rotating around center" effect and lets the ship move visibly on screen
+cameraRig.add(camera);
+camera.position.set(0, 0, 8); // Pull back further to see more context
+
 const playerShip = new THREE.Object3D();
-cameraRig.add(playerShip);
+cameraRig.add(playerShip); // Ship moves locally within the rig
 
 // Visual Hitbox (The Player)
-const shipGeo = new THREE.SphereGeometry(0.4, 16, 16); // Small hit circle
+const shipGeo = new THREE.SphereGeometry(0.4, 16, 16);
 const shipMat = new THREE.MeshBasicMaterial({ 
     color: 0x00ffff,
     wireframe: true 
 });
 const shipMesh = new THREE.Mesh(shipGeo, shipMat);
-// Add a core glow
 const coreGeo = new THREE.SphereGeometry(0.2, 16, 16);
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 shipMesh.add(new THREE.Mesh(coreGeo, coreMat));
 playerShip.add(shipMesh);
 
-// Camera positioned behind the ship (Chase view to see hitbox)
-camera.position.set(0, 0.5, 2.5); // Slightly up and behind
-playerShip.add(camera);
-
 playerShip.add(pointLight);
 
 // Controls
 const input = { x: 0, y: 0 };
-const joystickManager = nipplejs.create({
-    zone: document.getElementById('input-zone'),
-    mode: 'dynamic',
-    color: 'cyan'
+
+const updateInput = (clientX, clientY) => {
+    input.x = (clientX / window.innerWidth) * 2 - 1;
+    input.y = -(clientY / window.innerHeight) * 2 + 1;
+};
+
+// Unified Pointer Events (Touch & Mouse)
+window.addEventListener('pointermove', (e) => {
+    updateInput(e.clientX, e.clientY);
 });
 
-joystickManager.on('move', (evt, data) => {
-    if (data && data.vector) {
-        // Use force to allow subtle movements, clamped to 1.0
-        const force = Math.min(data.force, 1.0);
-        input.x = data.vector.x * force;
-        input.y = data.vector.y * force;
-    }
+window.addEventListener('pointerdown', (e) => {
+    updateInput(e.clientX, e.clientY);
 });
 
-joystickManager.on('end', () => {
-    input.x = 0;
-    input.y = 0;
-});
-
-window.addEventListener('mousemove', (e) => {
-    // Map mouse position to -1 to 1 range based on window size
-    input.x = (e.clientX / window.innerWidth) * 2 - 1;
-    input.y = -(e.clientY / window.innerHeight) * 2 + 1;
-});
+// Touch specific to prevent defaults
+window.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Prevent scrolling
+    const touch = e.touches[0];
+    updateInput(touch.clientX, touch.clientY);
+}, { passive: false });
 
 function startGame() {
     try {
@@ -223,34 +218,48 @@ function animate() {
     // Update Camera Rig Position on Path
     const point = world.path.getPointAt(state.t);
     const tangent = world.path.getTangentAt(state.t).normalize();
-    const normal = new THREE.Vector3(0, 1, 0).applyAxisAngle(tangent, state.time * 0.1); // Slowly rotate "up" vector to disorient
-    const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
-
+    const normal = new THREE.Vector3(0, 1, 0).applyAxisAngle(tangent, state.time * 0.1); 
+    
     // Orient Rig
-    const lookAt = point.clone().add(tangent);
+    const lookAtPos = point.clone().add(tangent);
     cameraRig.position.copy(point);
-    cameraRig.matrix.lookAt(cameraRig.position, lookAt, normal);
+    cameraRig.matrix.lookAt(cameraRig.position, lookAtPos, normal);
     cameraRig.quaternion.setFromRotationMatrix(cameraRig.matrix);
 
-    // Player Local Movement (Mouse Follow)
-    // Map input (-1 to 1) to safe tube radius
-    // We restrict target to a smaller radius to ensure the player attempts to stay safe
-    const safeRadius = 9.5;
-    const targetX = input.x * safeRadius;
-    const targetY = input.y * safeRadius;
+    // --- Control Logic ---
     
-    // Smooth lerp to target - Faster for "fine tuned" feel
-    // Using a very high lerp value makes it feel almost 1:1 but with slight weight
-    const lerpFactor = 15.0; 
-    playerPosLocal.x += (targetX - playerPosLocal.x) * lerpFactor * dt;
-    playerPosLocal.y += (targetY - playerPosLocal.y) * lerpFactor * dt;
+    // Calculate visible area at Z=0 (Ship Plane) based on Camera Z
+    // Camera Z is 8. FOV is 90.
+    // Half Height = 8 * tan(45deg) = 8
+    // Total Height = 16.
+    const visibleHeight = 16;
+    const visibleWidth = visibleHeight * (window.innerWidth / window.innerHeight);
 
-    // Wall Collision
-    const dist = playerPosLocal.length();
-    const wallLimit = 10.0; // Reduced to prevent camera clipping through undulating walls
+    // Map Input (-1 to 1) to World Units
+    let targetX = input.x * (visibleWidth / 2);
+    let targetY = input.y * (visibleHeight / 2);
 
-    if (dist > wallLimit) {
-        // Wall Hit Damage
+    // Limit Target to Tube Radius
+    // Radius is ~14. Keep ship somewhat safe.
+    // We want the player to feel they have full control, but hard stop at walls.
+    const maxRadius = 12.0; 
+    const targetVec = new THREE.Vector2(targetX, targetY);
+    
+    if (targetVec.length() > maxRadius) {
+        targetVec.setLength(maxRadius);
+    }
+
+    // Ultra-responsive movement (High Lerp)
+    const lerpFactor = 25.0; 
+    playerPosLocal.x += (targetVec.x - playerPosLocal.x) * lerpFactor * dt;
+    playerPosLocal.y += (targetVec.y - playerPosLocal.y) * lerpFactor * dt;
+
+    // Wall Collision Check
+    // If we are actually touching the wall
+    const currentDist = playerPosLocal.length();
+    const wallHitThreshold = 13.0; // Actual visual wall is around 14
+
+    if (currentDist > wallHitThreshold) {
         if (state.shake <= 0) {
             state.shake = 0.5;
             state.speed *= 0.8;
@@ -260,15 +269,15 @@ function animate() {
             glitchEl.style.opacity = 0.5;
             setTimeout(() => glitchEl.style.opacity = 0, 100);
         }
-        // Force back
-        playerPosLocal.setLength(wallLimit - 0.05);
+        playerPosLocal.setLength(wallHitThreshold - 0.1);
     }
 
     // Apply local position to ship
     playerShip.position.set(playerPosLocal.x, playerPosLocal.y, 0);
     
-    // Bank ship
-    playerShip.rotation.z = (playerPosLocal.x - targetX) * 0.1 + Math.sin(state.time * 10) * 0.05 * (state.speed/50);
+    // Bank ship based on horizontal movement velocity
+    const velocityX = (targetVec.x - playerPosLocal.x);
+    playerShip.rotation.z = -velocityX * 0.1;
 
     // Update World
     world.update(state.time, state.speed);
